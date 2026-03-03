@@ -9,6 +9,11 @@ __pycache__/
 demo_output.json
 demo_positions.json
 
+# Generated reports (keep directory, ignore content)
+reports/*.json
+reports/*.txt
+
+
 # Video samples (large binary files)
 data/samples/
 *.mp4

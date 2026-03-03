@@ -457,33 +457,52 @@ Bump policy:
 
 ---
 
-## How to Validate on a Real Clip
+## Validate on a Real Clip
 
 ```bash
+# 1. Install YOLO (one-time)
 pip install ultralytics
+python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"   # downloads weights
 
-python validate_broadcast.py --video clip.mp4
-python validate_broadcast.py --video clip.mp4 --yolo yolov8s.pt
-python validate_broadcast.py --video clip.mp4 --out report.json
+# 2. Place your clip
+# data/real/clip.mp4   (10–25 seconds is sufficient)
+
+# 3. Run validation
+python validate_broadcast.py --video data/real/clip.mp4 --yolo yolov8n.pt --out reports/clip_report.json
+
+# Options
+#  --yolo          YOLO weights file       (default: yolov8n.pt)
+#  --max-frames    frames to analyse       (default: 300)
+#  --out           JSON report path        (default: reports/clip_report.json)
 ```
 
-**PASS** means all of the following hold:
+**PASS** means all of these hard checks pass:
 
-- `schema_version` present on every serialised frame
-- `model_versions` present with keys `detector/tracker/formation/counter/schema`
-- At least 1 `is_settled=True` snapshot for each team
-- No NaN or Inf in any player `pitch_pos`
-- All `graph_health` blocks JSON-serialisable
-- `calibration_confidence` average ≥ 0.30
+| Check | Criteria |
+|---|---|
+| `schema_version` on every frame | must be `"2.1.0"` |
+| `model_versions` with all 5 keys | `detector/tracker/formation/counter/schema` |
+| No NaN or Inf in any `pitch_pos` | all player coords finite |
+| ≥ 1 settled snapshot — HOME | `is_settled=True` at least once |
+| ≥ 1 settled snapshot — AWAY | `is_settled=True` at least once |
+| `graph_health` JSON-serialisable | wherever formation exists |
+| `calibration_confidence avg` ≥ 0.30 | averaged over all frames |
 
-**Diagnostic ranges** (informational, not hard assertions):
+**Report** is written to `reports/clip_report.json` and contains:
+- `summary` — avg/min/max for `calibration_confidence`, `players_per_frame`, `processing_ms`
+- `summary.both_settled_ratio` — fraction of frames where **both** teams are settled
+- `summary.direction_known_ratio` — per team, fraction of frames with committed direction
+- `checks` — list of `{name, pass, details}` for every hard check
+- `env` — Python version, OpenCV version, ultralytics present/version
+
+**Diagnostic ranges** (informational only):
 
 | Metric | Expected (wide-angle broadcast, yolov8n) |
 |--------|------------------------------------------|
 | `calibration_confidence avg` | 0.65 – 0.85 |
 | `calibration_confidence min` | ~0.30 on close-up cuts |
 | `players per frame avg` | 14 – 20 |
-| `settled snapshots %` | 40 – 70% |
+| `both_settled_ratio` | 0.40 – 0.70 |
 
 ---
 
