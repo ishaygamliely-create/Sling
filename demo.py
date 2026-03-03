@@ -109,22 +109,27 @@ def _velocities(base, frame_idx, sigma_x=2.5, sigma_y=1.8):
 # SECTION 2 — POSITIONS MODE
 # ══════════════════════════════════════════════════════════════════════════════
 
-def run_positions_mode(n_frames: int, output_json: str) -> int:
+def run_positions_mode(n_frames: int, output_json: str,
+                       profile: str = 'broadcast',
+                       override_conf: float | None = None) -> int:
     """
     Feed deterministic positions directly into formation + counter pipeline.
     Returns number of frames that produced at least one counter suggestion.
     Exits with code 1 if no counters were generated (integration failure).
     """
     from core.pipeline import FootballIntelligencePipeline
+    from config.settings import get_profile_config
 
-    config = {
+    # Build from profile, then apply positions-specific overrides
+    config = get_profile_config(profile, override_conf)
+    config.update({
         'formation_window_frames': 60,
         'buffer_frames':           150,
         'max_track_misses':        30,
         'min_hits':                1,
         'target_fps':              5,
         'iou_threshold':           0.3,
-    }
+    })
 
     pipeline = FootballIntelligencePipeline(config)
 
@@ -137,6 +142,7 @@ def run_positions_mode(n_frames: int, output_json: str) -> int:
     print('  FOOTBALL INTELLIGENCE SYSTEM — POSITIONS MODE')
     print('  (formation + counters, no YOLO / camera required)')
     print(SEP)
+    print(f'  Profile  : {profile}  (conf={config["detection_confidence"]})')
     print(f'  Scenario : Home 4-3-3  vs  Away 4-2-3-1')
     print(f'  Frames   : {n_frames}  (~{n_frames/25:.0f}s @ 25fps equiv)')
     print(f'{SEP}\n')
@@ -323,24 +329,28 @@ def generate_synthetic_video(output_path: str, n_frames: int = 750, fps: int = 2
 # SECTION 4 — VIDEO MODE
 # ══════════════════════════════════════════════════════════════════════════════
 
-def run_video_mode(video_path: str, output_json: str, max_frames: int):
+def run_video_mode(video_path: str, output_json: str, max_frames: int,
+                   profile: str = 'broadcast',
+                   override_conf: float | None = None):
     from core.pipeline import FootballIntelligencePipeline
+    from config.settings import get_profile_config
 
-    config = {
+    config = get_profile_config(profile, override_conf)
+    config.update({
         'yolo_model':              'yolov8n.pt',
-        'detection_confidence':    0.35,
         'iou_threshold':           0.3,
         'max_track_misses':        30,
         'min_hits':                1,
         'target_fps':              5,
         'formation_window_frames': 60,
         'buffer_frames':           300,
-    }
+    })
     pipeline = FootballIntelligencePipeline(config)
     results  = []
 
     print('\n' + '═'*72)
     print('  FOOTBALL INTELLIGENCE SYSTEM — VIDEO MODE')
+    print(f'  Profile  : {profile}  (conf={config["detection_confidence"]})')
     print('═'*72 + '\n')
 
     for n, analysis in enumerate(pipeline.process_video(video_path), 1):
@@ -373,6 +383,11 @@ if __name__ == '__main__':
     parser.add_argument('--mode', choices=['positions','video','generate'],
                         default='positions',
                         help='positions (default) | video | generate')
+    parser.add_argument('--profile', default='broadcast',
+                        choices=['broadcast', 'wild'],
+                        help='Detection profile: broadcast (0.35) | wild (0.15)')
+    parser.add_argument('--conf', type=float, default=None,
+                        help='Override detection_confidence (highest priority)')
     parser.add_argument('--video',  type=str, default=None)
     parser.add_argument('--frames', type=int, default=150,
                         help='Frames for positions or generate mode [default 150]')
@@ -382,7 +397,8 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.mode == 'positions':
-        count = run_positions_mode(args.frames, args.output)
+        count = run_positions_mode(args.frames, args.output,
+                                   profile=args.profile, override_conf=args.conf)
         sys.exit(0 if count > 0 else 1)
 
     elif args.mode == 'generate':
@@ -397,4 +413,5 @@ if __name__ == '__main__':
             video_path = 'data/samples/synthetic_match.mp4'
             if not Path(video_path).exists():
                 generate_synthetic_video(video_path, n_frames=750)
-        run_video_mode(video_path, args.output, args.max_analysis_frames)
+        run_video_mode(video_path, args.output, args.max_analysis_frames,
+                       profile=args.profile, override_conf=args.conf)

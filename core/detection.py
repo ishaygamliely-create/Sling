@@ -143,7 +143,11 @@ class PlayerDetector:
         return self._detect_hog(frame)
 
     def _detect_yolo(self, frame: np.ndarray) -> List[RawDetection]:
-        conf_thresh = self.config.get('detection_confidence', 0.4)
+        conf_thresh      = self.config.get('detection_confidence', 0.4)
+        min_area_ratio   = self.config.get('min_bbox_area_ratio', 0.0)
+        max_aspect_ratio = self.config.get('max_aspect_ratio', 99.0)
+        frame_area       = float(frame.shape[0] * frame.shape[1]) or 1.0
+
         results = self.model(frame, conf=conf_thresh, classes=[0, 32], verbose=False)
 
         detections = []
@@ -151,7 +155,7 @@ class PlayerDetector:
 
         for r in results:
             for box in r.boxes:
-                cls = int(box.cls[0])
+                cls  = int(box.cls[0])
                 conf = float(box.conf[0])
                 x1, y1, x2, y2 = map(int, box.xyxy[0])
 
@@ -160,15 +164,27 @@ class PlayerDetector:
                     continue
 
                 if cls == 0:   # person
+                    w = max(x2 - x1, 1)
+                    h = max(y2 - y1, 1)
+
+                    # Safety rail 1: minimum bounding-box area
+                    if min_area_ratio > 0.0 and (w * h) / frame_area < min_area_ratio:
+                        continue  # too small — likely a crowd pixel / far-field noise
+
+                    # Safety rail 2: maximum height/width aspect ratio
+                    if h / w > max_aspect_ratio:
+                        continue  # extreme sliver — crowd edge / post artifact
+
                     emb = self.team_separator.extract_jersey_color(frame, (x1, y1, x2, y2))
                     detections.append(RawDetection(
                         bbox=(x1, y1, x2, y2),
                         confidence=conf,
                         class_id=cls,
-                        color_embedding=emb
+                        color_embedding=emb,
                     ))
 
         return detections
+
 
     def _detect_hog(self, frame: np.ndarray) -> List[RawDetection]:
         gray = cv2.resize(frame, (640, 360))

@@ -152,7 +152,7 @@ python -m unittest tests/test_failure_modes.py -v
 # or: pytest tests/ -v
 ```
 
-**Expected: 21 tests, all OK, ~0.5s**
+**Expected: 24 tests, all OK, ~0.5s**
 
 ```
 test_stability_survives_30pct_dropout ... ok
@@ -177,7 +177,7 @@ test_graph_health_in_snapshot_to_dict ... ok
 test_nominal_graph_connected_sigma_one ... ok
 test_spread_formation_adapts_sigma ... ok
 
-Ran 21 tests in 0.5s
+Ran 24 tests in 0.5s
 OK
 ```
 
@@ -506,6 +506,58 @@ python validate_broadcast.py --video data/real/clip.mp4 --yolo yolov8n.pt --out 
 
 ---
 
+## Detection Profiles
+
+The system ships with two detection profiles controlling `detection_confidence` and bbox safety rails (min area, max aspect ratio) — without touching settle logic or team separation.
+
+| Profile | `detection_confidence` | Best for |
+|---|---|---|
+| `broadcast` (default) | **0.35** | Fixed-camera broadcast, clear player silhouettes |
+| `wild` | **0.15** | Phone clips, YouTube, moving cam, crowded scenes |
+
+### CLI Usage
+
+```bash
+# Validate — explicit profile
+python validate_broadcast.py --video clip.mov --profile broadcast
+python validate_broadcast.py --video clip.mov --profile wild
+
+# Validate — explicit conf override (highest priority, overrides profile)
+python validate_broadcast.py --video clip.mov --conf 0.20
+
+# Demo — same flags
+python demo.py --mode positions --profile wild
+python demo.py --mode video --video clip.mov --profile wild
+```
+
+### Auto-Fallback (validate_broadcast only)
+
+When running with `--profile broadcast` (the default, no `--conf` override), the
+validator automatically re-runs with `wild` if at **frame 200**:
+- avg players/frame **< 14**, OR
+- **no settled snapshots** yet
+
+```
+⚠  AUTO-FALLBACK TRIGGERED: broadcast → wild
+   Reason : avg_players=8.3 < 14
+   Restarting with wild profile (conf=0.15) …
+```
+
+The JSON report always includes `profile_used`, `conf_used`, and `auto_fallback: true/false`.
+
+### Safety Rails
+
+Both profiles apply bbox guards **after YOLO conf filter, before tracker input**:
+
+| Guard | broadcast | wild |
+|---|---|---|
+| `min_bbox_area_ratio` | 0.05% of frame | 0.025% of frame |
+| `max_aspect_ratio` | 4.0 (h/w) | 4.0 (h/w) |
+
+These prevent crowd pixels and post/edge slivers from entering the tracker at `conf=0.15`.
+
+---
+
 ## Repo Structure
 
 ```
@@ -520,7 +572,7 @@ football-intelligence/
 ├── api/
 │   └── server.py          # FastAPI REST + WebSocket
 ├── tests/
-│   └── test_failure_modes.py  # 22 tests — stdlib unittest + pytest compatible
+│   └── test_failure_modes.py  # 24 tests — stdlib unittest + pytest compatible
 ├── demo.py                # Three-mode demo
 ├── validate_broadcast.py  # Real-clip validation
 ├── docker-compose.yml
@@ -565,7 +617,7 @@ Positions-mode demo (no image processing): **≈ 0.3 s for 150 frames** (~1.5 ms
 | FastAPI REST + WebSocket | ✅ | |
 | Docker Compose (CPU + GPU) | ✅ | |
 | Schema versioning (v2.1.0) | ✅ | schema_version + model_versions everywhere |
-| 22 regression tests | ✅ | stdlib unittest compatible |
+| 24 regression tests | ✅ | stdlib unittest compatible |
 | validate_broadcast.py | ✅ | Real-clip validation, hard PASS criteria |
 | Temporal formation evolution | 🔲 | Changepoint detection |
 | ML counter scorer | 🔲 | Learned win-probability |

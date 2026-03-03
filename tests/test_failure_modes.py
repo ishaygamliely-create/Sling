@@ -1,5 +1,5 @@
 """
-tests/test_failure_modes.py — 22 regression tests
+tests/test_failure_modes.py — 24 regression tests
 Run: python -m unittest tests/test_failure_modes.py -v
      pytest tests/test_failure_modes.py -v
 """
@@ -421,11 +421,39 @@ class TestGraphHealth(unittest.TestCase):
         print(f"\n  [PASS] Spread: sigma×{gh['sigma_multiplier']:.2f} fallback={gh['fallback_knn_only']} connected={gh['is_connected']}")
 
 
+class TestDetectionProfiles(unittest.TestCase):
+    """Regression tests for detection profile system (config/settings.py)."""
+
+    def test_broadcast_profile_confidence(self):
+        """broadcast profile must set detection_confidence = 0.35."""
+        from config.settings import get_profile_config
+        cfg = get_profile_config('broadcast')
+        self.assertEqual(cfg['detection_confidence'], 0.35)
+        print('\n  [PASS] broadcast profile: detection_confidence=0.35')
+
+    def test_wild_profile_confidence(self):
+        """wild profile must set detection_confidence = 0.15."""
+        from config.settings import get_profile_config
+        cfg = get_profile_config('wild')
+        self.assertEqual(cfg['detection_confidence'], 0.15)
+        print('\n  [PASS] wild profile: detection_confidence=0.15')
+
+    def test_explicit_conf_overrides_profile(self):
+        """--conf override must take priority over any profile setting."""
+        from config.settings import get_profile_config
+        cfg = get_profile_config('broadcast', override_conf=0.20)
+        self.assertEqual(cfg['detection_confidence'], 0.20)
+        cfg2 = get_profile_config('wild', override_conf=0.50)
+        self.assertEqual(cfg2['detection_confidence'], 0.50)
+        print('\n  [PASS] explicit override takes priority over profile')
+
+
 if __name__ == '__main__':
     loader = unittest.TestLoader()
     suite  = unittest.TestSuite()
     for cls in [TestOcclusionDropout, TestWrongHomographyFreeze, TestBroadcastZoomStability,
-                TestDirectionNormaliser, TestGKVoteBugRegression, TestSchemaVersion, TestGraphHealth]:
+                TestDirectionNormaliser, TestGKVoteBugRegression, TestSchemaVersion,
+                TestGraphHealth, TestDetectionProfiles]:
         suite.addTests(loader.loadTestsFromTestCase(cls))
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     sys.exit(0 if result.wasSuccessful() else 1)
