@@ -1,0 +1,28 @@
+# requirements-lock.txt — pinned versions for reproducible builds
+# Generated for Python 3.11 / Linux x86_64
+# To regenerate: pip-compile requirements.txt -o requirements-lock.txt
+
+# Core CV
+opencv-python-headless==4.9.0.80
+numpy==1.26.4
+scipy==1.13.0
+
+# Detection
+ultralytics==8.2.0          # YOLOv8 — downloads yolov8n.pt (~6MB) on first use
+# torch and torchvision pulled in by ultralytics; pinned here for reproducibility:
+torch==2.3.0
+torchvision==0.18.0
+
+# API
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9
+httpx==0.27.0               # async client for testing
+
+# Utilities
+pydantic==2.7.1
+python-dotenv==1.0.1
+
+# Optional: ML phase
+# scikit-learn==1.4.2
+# pandas==2.2.2

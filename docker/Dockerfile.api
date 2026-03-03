@@ -1,0 +1,26 @@
+FROM python:3.11-slim
+
+# System deps for OpenCV and scipy
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libglib2.0-0 libsm6 libxrender1 libxext6 libgomp1 \
+    libgl1-mesa-glx curl \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Install Python deps
+COPY requirements.txt requirements-lock.txt ./
+RUN pip install --no-cache-dir -r requirements-lock.txt
+
+# Copy source
+COPY core/ ./core/
+COPY api/ ./api/
+COPY config/ ./config/
+COPY demo.py ./
+
+# Pre-download YOLO model weights at build time
+RUN python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')" || true
+
+EXPOSE 8000
+
+CMD ["python", "api/server.py"]

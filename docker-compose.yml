@@ -1,0 +1,63 @@
+version: '3.9'
+
+services:
+  # ── Backend API ──────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    container_name: football_intelligence_api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data           # video input / output
+      - model_cache:/root/.cache   # YOLO model weights cache
+    environment:
+      - LOG_LEVEL=INFO
+      - PYTHONUNBUFFERED=1
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+        limits:
+          memory: 4G
+
+  # ── Frontend Dashboard ────────────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: football_intelligence_ui
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ── Demo runner (one-shot) ────────────────────────────────────────────────
+  demo:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    container_name: football_demo
+    command: python demo.py --frames 300 --max-analysis-frames 60
+    volumes:
+      - ./data:/app/data
+      - model_cache:/root/.cache
+    profiles: ["demo"]   # only runs with: docker compose --profile demo up demo
+
+volumes:
+  model_cache:

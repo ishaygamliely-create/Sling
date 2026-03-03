@@ -1,0 +1,24 @@
+{
+  "name": "football-intelligence-ui",
+  "version": "2.0.0",
+  "private": true,
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-scripts": "5.0.1"
+  },
+  "scripts": {
+    "start":  "react-scripts start",
+    "build":  "react-scripts build",
+    "test":   "react-scripts test --watchAll=false",
+    "lint":   "eslint src/"
+  },
+  "browserslist": {
+    "production": [">0.2%", "not dead"],
+    "development": ["last 1 chrome version"]
+  },
+  "proxy": "http://localhost:8000",
+  "eslintConfig": {
+    "extends": ["react-app"]
+  }
+}
