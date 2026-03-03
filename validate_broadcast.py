@@ -102,6 +102,12 @@ def validate(
 
     pipeline_cfg = dict(cfg)
     pipeline_cfg['yolo_model'] = yolo_model
+    # Validation-specific overrides (shorter window = faster settlement in clips)
+    pipeline_cfg.update({
+        'formation_window_frames': 60,   # DEFAULT_CONFIG=150 is too long for clipped validation
+        'min_hits':                1,
+        'max_track_misses':        30,
+    })
 
     pipeline = FootballIntelligencePipeline(pipeline_cfg)
 
@@ -229,16 +235,21 @@ def validate(
 
         # ── Auto-fallback check at frame 200 ─────────────────────────────
         if auto_fallback_enabled and fi == _FALLBACK_CHECK_FRAME:
-            avg_p   = statistics.mean(player_counts) if player_counts else 0
-            settled = sum(1 for s in home_snaps if s.get('is_settled')) + \
-                      sum(1 for s in away_snaps if s.get('is_settled'))
+            avg_p        = statistics.mean(player_counts) if player_counts else 0
+            home_settled = sum(1 for s in home_snaps if s.get('is_settled'))
+            tot_settled  = home_settled + \
+                           sum(1 for s in away_snaps if s.get('is_settled'))
             reasons = []
             if avg_p < _FALLBACK_MIN_PLAYERS:
                 reasons.append(
                     f'avg_players={avg_p:.1f} < {_FALLBACK_MIN_PLAYERS}')
-            if settled < _FALLBACK_MIN_SETTLED:
+            if tot_settled < _FALLBACK_MIN_SETTLED:
                 reasons.append(
-                    f'settled_snapshots={settled} < {_FALLBACK_MIN_SETTLED}')
+                    f'settled_snapshots={tot_settled} < {_FALLBACK_MIN_SETTLED}')
+            # HOME-specific: if HOME has been building snapshots but never settles
+            if len(home_snaps) >= 20 and home_settled == 0:
+                reasons.append(
+                    f'HOME 0 settled after {len(home_snaps)} snapshots')
             if reasons:
                 fallback_triggered = True
                 fallback_reason    = '; '.join(reasons)

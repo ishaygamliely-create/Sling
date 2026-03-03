@@ -48,13 +48,13 @@ DEFAULT_CONFIG = {
 DETECTION_PROFILES: dict[str, dict] = {
     "broadcast": {
         "detection_confidence": 0.35,
-        "min_bbox_area_ratio":  0.0005,   # 0.05% of frame — keeps players, drops small noise
+        "min_bbox_area_ratio":  0.0002,   # 0.02% — ~415px on 1080p; blocks tiny noise
         "max_aspect_ratio":     4.0,
     },
     "wild": {
         "detection_confidence": 0.15,
-        "min_bbox_area_ratio":  0.00025,  # 0.025% — slightly more permissive for distant cam
-        "max_aspect_ratio":     4.0,
+        "min_bbox_area_ratio":  0.00005,  # 0.005% — ~104px on 1080p; near-disabled
+        "max_aspect_ratio":     4.0,       # aspect ratio remains the main guard
     },
 }
 
