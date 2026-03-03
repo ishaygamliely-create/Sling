@@ -163,7 +163,7 @@ class TestDirectionNormaliser(unittest.TestCase):
         settled = [s for s in snaps if s and s.direction_known]
         self.assertGreater(len(settled), VOTE_WINDOW*0.5)
         self.assertEqual(settled[-1].attacking_direction, 1)
-        print("\n  [PASS] GK at x=5 → attacking_direction=+1")
+        print("\n  [PASS] GK at x=5 -> attacking_direction=+1")
 
     def test_gk_right_attacks_left(self):
         from core.formation import DynamicFormationEngine
@@ -179,7 +179,7 @@ class TestDirectionNormaliser(unittest.TestCase):
         settled = [s for s in snaps if s and s.direction_known]
         self.assertGreater(len(settled), VOTE_WINDOW*0.5)
         self.assertEqual(settled[-1].attacking_direction, -1)
-        print("\n  [PASS] GK at x=100 → attacking_direction=-1")
+        print("\n  [PASS] GK at x=100 -> attacking_direction=-1")
 
     def test_midfield_crossings_no_flip(self):
         from core.formation import DynamicFormationEngine
