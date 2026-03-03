@@ -152,7 +152,7 @@ python -m unittest tests/test_failure_modes.py -v
 # or: pytest tests/ -v
 ```
 
-**Expected: 24 tests, all OK, ~0.5s**
+**Expected: 25 tests, all OK, ~0.5s**
 
 ```
 test_stability_survives_30pct_dropout ... ok
@@ -177,7 +177,7 @@ test_graph_health_in_snapshot_to_dict ... ok
 test_nominal_graph_connected_sigma_one ... ok
 test_spread_formation_adapts_sigma ... ok
 
-Ran 24 tests in 0.5s
+Ran 25 tests in 0.5s
 OK
 ```
 
@@ -460,9 +460,15 @@ Bump policy:
 ## Validate on a Real Clip
 
 ```bash
-# 1. Install YOLO (one-time)
-pip install ultralytics
-python -c "from ultralytics import YOLO; YOLO('yolov8n.pt')"   # downloads weights
+# Broadcast clip (default)
+python validate_broadcast.py --video clip.mov --yolo yolov8n.pt --max-frames 500
+
+# Phone / YouTube clip (use wild profile)
+python validate_broadcast.py --video clip.mp4 --profile wild
+
+# Explicit confidence override
+python validate_broadcast.py --video clip.mp4 --conf 0.20
+```
 
 # 2. Place your clip
 # data/real/clip.mp4   (10–25 seconds is sufficient)
@@ -572,7 +578,7 @@ football-intelligence/
 ├── api/
 │   └── server.py          # FastAPI REST + WebSocket
 ├── tests/
-│   └── test_failure_modes.py  # 24 tests — stdlib unittest + pytest compatible
+│   └── test_failure_modes.py  # 25 tests — stdlib unittest + pytest compatible
 ├── demo.py                # Three-mode demo
 ├── validate_broadcast.py  # Real-clip validation
 ├── docker-compose.yml
@@ -617,7 +623,7 @@ Positions-mode demo (no image processing): **≈ 0.3 s for 150 frames** (~1.5 ms
 | FastAPI REST + WebSocket | ✅ | |
 | Docker Compose (CPU + GPU) | ✅ | |
 | Schema versioning (v2.1.0) | ✅ | schema_version + model_versions everywhere |
-| 24 regression tests | ✅ | stdlib unittest compatible |
+| 25 regression tests | ✅ | stdlib unittest compatible |
 | validate_broadcast.py | ✅ | Real-clip validation, hard PASS criteria |
 | Temporal formation evolution | 🔲 | Changepoint detection |
 | ML counter scorer | 🔲 | Learned win-probability |

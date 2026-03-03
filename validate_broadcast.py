@@ -61,13 +61,14 @@ def _env_info() -> Dict[str, Any]:
 # ── Core validation logic ─────────────────────────────────────────────────────
 
 def validate(
-    video_path:     str,
-    out_path:       str,
-    yolo_model:     str,
-    max_frames:     int,
-    profile:        str  = 'broadcast',
-    override_conf:  Optional[float] = None,
-    _is_fallback:   bool = False,
+    video_path:       str,
+    out_path:         str,
+    yolo_model:       str,
+    max_frames:       int,
+    profile:          str  = 'broadcast',
+    override_conf:    Optional[float] = None,
+    _is_fallback:     bool = False,
+    _fallback_reason: str  = '',
 ) -> bool:
     """
     Run validation on a broadcast clip.
@@ -259,7 +260,8 @@ def validate(
                       get_profile_config("wild")["detection_confidence"]}) …\n')
                 return validate(
                     video_path, out_path, yolo_model, max_frames,
-                    profile='wild', override_conf=None, _is_fallback=True,
+                    profile='wild', override_conf=None,
+                    _is_fallback=True, _fallback_reason=fallback_reason,
                 )
 
         # Progress indicator every 50 frames
@@ -331,13 +333,14 @@ def validate(
 
     # ── Build report dict ─────────────────────────────────────────────────────
     report: Dict[str, Any] = {
-        'schema_version': SCHEMA_VERSION,
-        'result':         'PASS' if hard_pass else 'FAIL',
-        'profile_used':   'wild' if _is_fallback else profile,
-        'conf_used':      eff_conf,
-        'auto_fallback':  _is_fallback,
-        'video':          str(video_path),
-        'env':            _env_info(),
+        'schema_version':          SCHEMA_VERSION,
+        'result':                  'PASS' if hard_pass else 'FAIL',
+        'profile_used':            'wild' if _is_fallback else profile,
+        'conf_used':               eff_conf,
+        'auto_fallback_triggered': _is_fallback,
+        'fallback_reason':         _fallback_reason if _is_fallback else None,
+        'video':                   str(video_path),
+        'env':                     _env_info(),
         'summary': {
             'frames_processed':   total,
             'both_settled_ratio': settled_ratio,

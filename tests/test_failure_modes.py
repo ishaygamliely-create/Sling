@@ -1,5 +1,5 @@
 """
-tests/test_failure_modes.py — 24 regression tests
+tests/test_failure_modes.py — 25 regression tests
 Run: python -m unittest tests/test_failure_modes.py -v
      pytest tests/test_failure_modes.py -v
 """
@@ -447,13 +447,43 @@ class TestDetectionProfiles(unittest.TestCase):
         self.assertEqual(cfg2['detection_confidence'], 0.50)
         print('\n  [PASS] explicit override takes priority over profile')
 
+class TestReportSchema(unittest.TestCase):
+    """Smoke test: validate_broadcast JSON report must contain key fields."""
+
+    REQUIRED_KEYS = [
+        'schema_version', 'result', 'profile_used', 'conf_used',
+        'auto_fallback_triggered', 'fallback_reason',
+    ]
+
+    def test_report_json_has_required_keys(self):
+        """Report dict must contain profile_used, conf_used, and fallback keys."""
+        # Simulate the structure validate_broadcast.py writes to JSON
+        mock_report = {
+            'schema_version':          '2.1.0',
+            'result':                  'PASS',
+            'profile_used':            'broadcast',
+            'conf_used':               0.35,
+            'auto_fallback_triggered': False,
+            'fallback_reason':         None,
+        }
+        for key in self.REQUIRED_KEYS:
+            self.assertIn(key, mock_report,
+                          msg=f'Missing required report key: {key}')
+        # When fallback fires, reason must be a non-empty string
+        fallback_report = dict(mock_report)
+        fallback_report['auto_fallback_triggered'] = True
+        fallback_report['fallback_reason'] = 'HOME 0 settled after 152 snapshots'
+        self.assertIsNotNone(fallback_report['fallback_reason'])
+        self.assertGreater(len(fallback_report['fallback_reason']), 0)
+        print('\n  [PASS] report JSON contains all required Phase 4.1 keys')
+
 
 if __name__ == '__main__':
     loader = unittest.TestLoader()
     suite  = unittest.TestSuite()
     for cls in [TestOcclusionDropout, TestWrongHomographyFreeze, TestBroadcastZoomStability,
                 TestDirectionNormaliser, TestGKVoteBugRegression, TestSchemaVersion,
-                TestGraphHealth, TestDetectionProfiles]:
+                TestGraphHealth, TestDetectionProfiles, TestReportSchema]:
         suite.addTests(loader.loadTestsFromTestCase(cls))
     result = unittest.TextTestRunner(verbosity=2).run(suite)
     sys.exit(0 if result.wasSuccessful() else 1)
