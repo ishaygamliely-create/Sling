@@ -1,0 +1,29 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Demo outputs (generated files)
+demo_output.json
+demo_positions.json
+
+# Video samples (large binary files)
+data/samples/
+*.mp4
+
+# Environment
+.env
+.venv/
+venv/
+env/
+
+# IDE
+.vscode/
+.idea/
+
+# Pip
+*.egg-info/
+dist/
+build/
