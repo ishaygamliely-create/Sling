@@ -14,9 +14,11 @@ reports/*.json
 reports/*.txt
 
 
-# Video samples (large binary files)
+# Video samples and YOLO weights (large binary files)
 data/samples/
 *.mp4
+*.mov
+*.pt
 
 # Environment
 .env
