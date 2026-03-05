@@ -4,9 +4,10 @@ v2.1 schema | v0.1.0 API
 """
 
 from __future__ import annotations
-import base64, json, logging, sys
+import base64, json, logging, os, sys, uuid
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import cv2, numpy as np
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -16,10 +17,27 @@ try:
     from fastapi.middleware.cors import CORSMiddleware
     from fastapi.responses import StreamingResponse
     from pydantic import BaseModel
+    import httpx
     import uvicorn
 except ImportError:
-    print("Install: pip install fastapi uvicorn python-multipart")
+    print("Install: pip install fastapi uvicorn python-multipart httpx")
     sys.exit(1)
+
+# Upstash Redis — optional (only used when env vars present)
+try:
+    from upstash_redis import Redis as _UpstashRedis
+    _REDIS_AVAILABLE = bool(os.environ.get("UPSTASH_REDIS_REST_URL"))
+except ImportError:
+    _UpstashRedis = None  # type: ignore
+    _REDIS_AVAILABLE = False
+
+def _get_redis():
+    if not _REDIS_AVAILABLE or _UpstashRedis is None:
+        raise HTTPException(status_code=503, detail="Redis not configured")
+    return _UpstashRedis(
+        url=os.environ["UPSTASH_REDIS_REST_URL"],
+        token=os.environ["UPSTASH_REDIS_REST_TOKEN"],
+    )
 
 # Core pipeline — optional (unavailable in lightweight Vercel serverless deploy)
 try:
@@ -117,42 +135,69 @@ async def health():
 @app.post("/analyze", summary="Submit video for tactical analysis")
 async def analyze(req: VideoAnalyzeRequest):
     """
-    MVP endpoint — accepts a video_url and returns a stub analysis.
-    Full async processing (queue + worker) will be wired in the next milestone.
+    Validates URL, creates job in Redis (status=queued),
+    fires POST /jobs to the Worker, returns job_id immediately.
     """
     import re
-    if not re.match(r"^https?://", req.video_url):
-        raise HTTPException(status_code=422, detail="video_url must be a valid http/https URL")
+    if not re.match(r"^https://", req.video_url):
+        raise HTTPException(status_code=422, detail="video_url must start with https://")
 
-    base = {
+    job_id = str(uuid.uuid4())
+    now    = datetime.now(timezone.utc).isoformat()
+
+    job_state: Dict[str, Any] = {
+        "job_id":     job_id,
+        "video_url":  req.video_url,
+        "status":     "queued",
+        "created_at": now,
+        "updated_at": now,
+        "progress":   {"frames_processed": 0, "frames_total_est": None},
+        "result":     None,
+        "error":      None,
+    }
+
+    # Write initial state to Redis
+    redis = _get_redis()
+    redis.set(f"job:{job_id}", json.dumps(job_state), ex=86400)
+
+    # Forward to Worker (fire-and-forget, short timeout)
+    worker_url   = os.environ.get("WORKER_BASE_URL", "")
+    worker_token = os.environ.get("WORKER_AUTH_TOKEN", "")
+    if worker_url:
+        for attempt in range(2):
+            try:
+                async with httpx.AsyncClient(timeout=10.0) as client:
+                    r = await client.post(
+                        f"{worker_url}/jobs",
+                        json={"job_id": job_id, "video_url": req.video_url},
+                        headers={"Authorization": f"Bearer {worker_token}"},
+                    )
+                    r.raise_for_status()
+                break
+            except Exception as e:
+                if attempt == 1:
+                    logger.warning(f"Worker call failed after 2 attempts: {e}")
+                    # Job remains 'queued' in Redis — operator must retry
+
+    return {
         "api_version":    SLING_API_VERSION,
         "schema_version": SCHEMA_VERSION,
-        "video_url":      req.video_url,
+        "status":         "accepted",
+        "job_id":         job_id,
     }
 
-    if not _CORE_AVAILABLE:
-        return {
-            **base,
-            "status":   "accepted",
-            "job_mode": "async",
-            "analysis": {"formation": None, "pressing": None, "events": []},
-            "notes":    "MVP placeholder — engine not loaded in serverless mode. "
-                        "Full processing requires a worker deployment.",
-        }
 
-    # Core available: return metadata-only analysis (no heavy processing in request)
-    return {
-        **base,
-        "status":   "accepted",
-        "job_mode": "sync",
-        "analysis": {
-            "formation": None,
-            "pressing":  None,
-            "events":    [],
-        },
-        "notes":    "Engine available. Submit via /analyze/frame or /analyze/video "
-                    "for full frame-by-frame analysis. Async job queue coming in v0.2.",
-    }
+@app.get("/jobs/{job_id}", summary="Poll job status and result")
+async def get_job(job_id: str):
+    """
+    Reads job state directly from Redis.
+    Returns status / progress / result (summary-only) / error.
+    """
+    redis = _get_redis()
+    raw   = redis.get(f"job:{job_id}")
+    if raw is None:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+    return json.loads(raw)
 
 
 @app.post("/analyze/frame")

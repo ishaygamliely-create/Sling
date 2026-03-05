@@ -1,0 +1,19 @@
+app            = "sling-worker"
+primary_region = "iad"
+
+[build]
+  dockerfile = "worker/Dockerfile"
+
+[build.args]
+  # Build context is the Sling repo root so core/ and config/ are available
+
+[http_service]
+  internal_port       = 8080
+  force_https         = true
+  auto_stop_machines  = false   # keep warm — no cold-start delay on job submission
+  min_machines_running = 1
+
+[[vm]]
+  memory   = "2gb"             # PyTorch + yolov8n + frame buffers
+  cpu_kind = "shared"
+  cpus     = 1
