@@ -1,6 +1,6 @@
 """
-api/server.py — FastAPI REST + WebSocket
-v2.1: schema_version + model_versions on /health and all analysis responses.
+api/server.py — Football Intelligence API
+v2.1 schema | v0.1.0 API
 """
 
 from __future__ import annotations
@@ -33,8 +33,28 @@ except Exception:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Football Intelligence API", version=SCHEMA_VERSION)
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+SLING_API_VERSION = "0.1.0"
+
+app = FastAPI(
+    title="Sling — Football Intelligence API",
+    description="Tactical analysis engine for broadcast football clips.",
+    version=SLING_API_VERSION,
+    docs_url="/docs",
+    redoc_url="/redoc",
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://sling-seven.vercel.app",
+        "https://*.vercel.app",
+        "http://localhost:3000",
+        "http://localhost:8000",
+    ],
+    allow_origin_regex=r"https://.*\.vercel\.app",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 _pipeline = None
 _config: Dict = {
@@ -56,15 +76,34 @@ class FrameRequest(BaseModel):
 
 class ManualCalibRequest(BaseModel):
     pixel_points: List[List[float]]
-    pitch_points: List[List[float]]
+    pitch_points:  List[List[float]]
+
+class VideoAnalyzeRequest(BaseModel):
+    video_url: str
 
 
-@app.get("/health")
+@app.get("/", summary="Service root")
+async def root():
+    return {
+        "service":         "Sling Football Intelligence API",
+        "api_version":     SLING_API_VERSION,
+        "schema_version":  SCHEMA_VERSION,
+        "pipeline":        "available" if _CORE_AVAILABLE else "serverless mode",
+        "links": {
+            "health":  "/health",
+            "analyze": "/analyze",
+            "docs":    "/docs",
+        },
+    }
+
+
+@app.get("/health", summary="Health check")
 async def health():
     """Lightweight health check — works without pipeline/YOLO on Vercel."""
     info: Dict = {
         "status":          "ok",
-        "schema_version": SCHEMA_VERSION,
+        "api_version":     SLING_API_VERSION,
+        "schema_version":  SCHEMA_VERSION,
         "pipeline":        "available" if _CORE_AVAILABLE else "not loaded (serverless mode)",
     }
     if _CORE_AVAILABLE and _pipeline is not None:
@@ -73,6 +112,47 @@ async def health():
         info["frame_count"]            = _pipeline.frame_count
         info["active_tracks"]          = len(_pipeline.tracker.tracks)
     return info
+
+
+@app.post("/analyze", summary="Submit video for tactical analysis")
+async def analyze(req: VideoAnalyzeRequest):
+    """
+    MVP endpoint — accepts a video_url and returns a stub analysis.
+    Full async processing (queue + worker) will be wired in the next milestone.
+    """
+    import re
+    if not re.match(r"^https?://", req.video_url):
+        raise HTTPException(status_code=422, detail="video_url must be a valid http/https URL")
+
+    base = {
+        "api_version":    SLING_API_VERSION,
+        "schema_version": SCHEMA_VERSION,
+        "video_url":      req.video_url,
+    }
+
+    if not _CORE_AVAILABLE:
+        return {
+            **base,
+            "status":   "accepted",
+            "job_mode": "async",
+            "analysis": {"formation": None, "pressing": None, "events": []},
+            "notes":    "MVP placeholder — engine not loaded in serverless mode. "
+                        "Full processing requires a worker deployment.",
+        }
+
+    # Core available: return metadata-only analysis (no heavy processing in request)
+    return {
+        **base,
+        "status":   "accepted",
+        "job_mode": "sync",
+        "analysis": {
+            "formation": None,
+            "pressing":  None,
+            "events":    [],
+        },
+        "notes":    "Engine available. Submit via /analyze/frame or /analyze/video "
+                    "for full frame-by-frame analysis. Async job queue coming in v0.2.",
+    }
 
 
 @app.post("/analyze/frame")
