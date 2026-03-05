@@ -21,7 +21,14 @@ except ImportError:
     print("Install: pip install fastapi uvicorn python-multipart")
     sys.exit(1)
 
-from core.pipeline import FootballIntelligencePipeline, SCHEMA_VERSION
+# Core pipeline — optional (unavailable in lightweight Vercel serverless deploy)
+try:
+    from core.pipeline import FootballIntelligencePipeline, SCHEMA_VERSION
+    _CORE_AVAILABLE = True
+except Exception:
+    FootballIntelligencePipeline = None  # type: ignore
+    SCHEMA_VERSION = "2.1.0"
+    _CORE_AVAILABLE = False
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -29,15 +36,17 @@ logger = logging.getLogger(__name__)
 app = FastAPI(title="Football Intelligence API", version=SCHEMA_VERSION)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-_pipeline: Optional[FootballIntelligencePipeline] = None
+_pipeline = None
 _config: Dict = {
     'yolo_model': 'yolov8n.pt', 'detection_confidence': 0.35,
     'iou_threshold': 0.3, 'max_track_misses': 30,
     'min_hits': 1, 'formation_window_frames': 60,
 }
 
-def get_pipeline() -> FootballIntelligencePipeline:
+def get_pipeline():
     global _pipeline
+    if not _CORE_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Pipeline not available in this deployment")
     if _pipeline is None:
         _pipeline = FootballIntelligencePipeline(_config)
     return _pipeline
@@ -52,16 +61,18 @@ class ManualCalibRequest(BaseModel):
 
 @app.get("/health")
 async def health():
-    p = get_pipeline()
-    return {
-        "status":                 "ok",
-        "schema_version":         SCHEMA_VERSION,
-        "model_versions":         dict(p.model_versions),
-        "calibration_confidence": round(p.calibrator.calibration_confidence, 3),
-        "is_calibrated":          p.calibrator.is_calibrated,
-        "frame_count":            p.frame_count,
-        "active_tracks":          len(p.tracker.tracks),
+    """Lightweight health check — works without pipeline/YOLO on Vercel."""
+    info: Dict = {
+        "status":          "ok",
+        "schema_version": SCHEMA_VERSION,
+        "pipeline":        "available" if _CORE_AVAILABLE else "not loaded (serverless mode)",
     }
+    if _CORE_AVAILABLE and _pipeline is not None:
+        info["calibration_confidence"] = round(_pipeline.calibrator.calibration_confidence, 3)
+        info["is_calibrated"]          = _pipeline.calibrator.is_calibrated
+        info["frame_count"]            = _pipeline.frame_count
+        info["active_tracks"]          = len(_pipeline.tracker.tracks)
+    return info
 
 
 @app.post("/analyze/frame")
