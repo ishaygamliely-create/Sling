@@ -69,6 +69,19 @@ async def root():
     return {"service": "sling-worker", "status": "ready"}
 
 
+@app.get("/jobs/{job_id}", dependencies=[Depends(_require_auth)])
+async def get_job(job_id: str):
+    """
+    Return current job state from the store (Redis in prod, mem-store in DEV_MODE).
+    Used by the API gateway to proxy job reads in DEV_MODE so the Worker is
+    always the single source of truth for job state.
+    """
+    job = redis_store.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+    return job
+
+
 @app.post("/jobs", dependencies=[Depends(_require_auth)])
 async def create_job(req: JobRequest, background_tasks: BackgroundTasks):
     """

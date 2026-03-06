@@ -23,11 +23,19 @@ except ImportError:
     print("Install: pip install fastapi uvicorn python-multipart httpx")
     sys.exit(1)
 
-# Upstash Redis — optional (only used when env vars present)
-try:
-    from upstash_redis import Redis as _UpstashRedis
-    _REDIS_AVAILABLE = bool(os.environ.get("UPSTASH_REDIS_REST_URL"))
-except ImportError:
+# DEV_MODE — use in-memory store instead of Upstash (set DEV_MODE=1 locally)
+_DEV_MODE: bool = os.environ.get("DEV_MODE") == "1"
+_mem_jobs: dict = {}  # only populated in DEV_MODE
+
+# Upstash Redis — optional (only used in production, skipped in DEV_MODE)
+if not _DEV_MODE:
+    try:
+        from upstash_redis import Redis as _UpstashRedis
+        _REDIS_AVAILABLE = bool(os.environ.get("UPSTASH_REDIS_REST_URL"))
+    except ImportError:
+        _UpstashRedis = None  # type: ignore
+        _REDIS_AVAILABLE = False
+else:
     _UpstashRedis = None  # type: ignore
     _REDIS_AVAILABLE = False
 
@@ -156,9 +164,12 @@ async def analyze(req: VideoAnalyzeRequest):
         "error":      None,
     }
 
-    # Write initial state to Redis
-    redis = _get_redis()
-    redis.set(f"job:{job_id}", json.dumps(job_state), ex=86400)
+    # Write initial state — in-memory (DEV_MODE) or Upstash (production)
+    if _DEV_MODE:
+        _mem_jobs[f"job:{job_id}"] = json.dumps(job_state)
+    else:
+        redis = _get_redis()
+        redis.set(f"job:{job_id}", json.dumps(job_state), ex=86400)
 
     # Forward to Worker (fire-and-forget, short timeout)
     worker_url   = os.environ.get("WORKER_BASE_URL", "")
@@ -177,7 +188,7 @@ async def analyze(req: VideoAnalyzeRequest):
             except Exception as e:
                 if attempt == 1:
                     logger.warning(f"Worker call failed after 2 attempts: {e}")
-                    # Job remains 'queued' in Redis — operator must retry
+                    # Job remains 'queued' — operator must retry
 
     return {
         "api_version":    SLING_API_VERSION,
@@ -190,9 +201,31 @@ async def analyze(req: VideoAnalyzeRequest):
 @app.get("/jobs/{job_id}", summary="Poll job status and result")
 async def get_job(job_id: str):
     """
-    Reads job state directly from Redis.
-    Returns status / progress / result (summary-only) / error.
+    Production: reads job state directly from Upstash Redis.
+    DEV_MODE:   proxies to Worker (the single source of truth for job state).
     """
+    if _DEV_MODE:
+        # Proxy to Worker so we always get live running/done/failed state
+        worker_url   = os.environ.get("WORKER_BASE_URL", "")
+        worker_token = os.environ.get("WORKER_AUTH_TOKEN", "")
+        if not worker_url:
+            raise HTTPException(status_code=503, detail="WORKER_BASE_URL not set")
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(
+                    f"{worker_url}/jobs/{job_id}",
+                    headers={"Authorization": f"Bearer {worker_token}"},
+                )
+            if resp.status_code == 404:
+                raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found")
+            resp.raise_for_status()
+            return resp.json()
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Worker unreachable: {e}")
+
+    # Production path — read directly from Upstash
     redis = _get_redis()
     raw   = redis.get(f"job:{job_id}")
     if raw is None:

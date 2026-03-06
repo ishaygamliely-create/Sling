@@ -22,6 +22,7 @@ data/samples/
 
 # Environment
 .env
+.env.local
 .venv/
 venv/
 env/
