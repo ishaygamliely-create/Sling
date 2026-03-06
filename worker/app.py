@@ -69,6 +69,20 @@ async def root():
     return {"service": "sling-worker", "status": "ready"}
 
 
+@app.get("/health", include_in_schema=False)
+async def health():
+    """Unauthenticated health check — safe for load balancers and local curl."""
+    dev_mode = os.environ.get("DEV_MODE") == "1"
+    active   = len(redis_store._mem) if dev_mode else None
+    return {
+        "status":   "ok",
+        "service":  "sling-worker",
+        "dev_mode": dev_mode,
+        "store":    "memory" if dev_mode else "redis",
+        "active_jobs": active,   # count of keys in mem-store (DEV_MODE only)
+    }
+
+
 @app.get("/jobs/{job_id}", dependencies=[Depends(_require_auth)])
 async def get_job(job_id: str):
     """
