@@ -6,13 +6,13 @@
 
 param(
     [int]$WorkerPort = 9000,
-    [int]$ApiPort    = 8000
+    [int]$ApiPort = 8000
 )
 
 $Root = Split-Path $PSScriptRoot -Parent
 Set-Location $Root
 
-# ── Load .env.local ────────────────────────────────────────────────────────────
+# -- Load .env.local -----------------------------------------------------------
 $EnvFile = Join-Path $Root ".env.local"
 if (Test-Path $EnvFile) {
     Write-Host "  Loading $EnvFile ..." -ForegroundColor Cyan
@@ -23,55 +23,63 @@ if (Test-Path $EnvFile) {
             [System.Environment]::SetEnvironmentVariable($k.Trim(), $v.Trim(), "Process")
         }
     }
-} else {
-    Write-Host "  [warn] No .env.local found — using existing env vars" -ForegroundColor Yellow
-    # Defaults for local dev if no .env.local
-    if (-not $env:DEV_MODE)          { $env:DEV_MODE          = "1" }
+}
+else {
+    Write-Host "  [warn] No .env.local found -- using defaults" -ForegroundColor Yellow
+    if (-not $env:DEV_MODE) { $env:DEV_MODE = "1" }
     if (-not $env:WORKER_AUTH_TOKEN) { $env:WORKER_AUTH_TOKEN = "localtest" }
-    if (-not $env:WORKER_BASE_URL)   { $env:WORKER_BASE_URL   = "http://127.0.0.1:$WorkerPort" }
+    if (-not $env:WORKER_BASE_URL) { $env:WORKER_BASE_URL = "http://127.0.0.1:$WorkerPort" }
 }
 
-# ── Start Worker in background ─────────────────────────────────────────────────
+# -- Start Worker in background ------------------------------------------------
 Write-Host ""
-Write-Host "  Starting Worker on :$WorkerPort ..." -ForegroundColor Green
-$WorkerJob = Start-Job -ScriptBlock {
-    param($root, $port)
-    Set-Location $root
-    # Copy env vars into job scope
-    $env:DEV_MODE          = $using:env:DEV_MODE
-    $env:WORKER_AUTH_TOKEN = $using:env:WORKER_AUTH_TOKEN
-    & python run_worker.py
-} -ArgumentList $Root, $WorkerPort
+Write-Host "  Starting Worker on port $WorkerPort ..." -ForegroundColor Green
 
-# Give Worker a moment to boot
+$workerEnv = @{
+    DEV_MODE          = $env:DEV_MODE
+    WORKER_AUTH_TOKEN = $env:WORKER_AUTH_TOKEN
+}
+
+$WorkerJob = Start-Job -ScriptBlock {
+    param($root, $envVars)
+    Set-Location $root
+    foreach ($kv in $envVars.GetEnumerator()) {
+        [System.Environment]::SetEnvironmentVariable($kv.Key, $kv.Value, "Process")
+    }
+    python run_worker.py
+} -ArgumentList $Root, $workerEnv
+
+# Give Worker time to boot
 Start-Sleep -Seconds 3
 
-# Quick health check
+# Quick health check (unauthenticated)
 try {
     $hc = Invoke-RestMethod "http://127.0.0.1:$WorkerPort/health" -ErrorAction Stop
-    Write-Host "  Worker health: $($hc.status) | store=$($hc.store) | dev_mode=$($hc.dev_mode)" -ForegroundColor Green
-} catch {
-    Write-Host "  [warn] Worker health check failed — check logs below if API fails" -ForegroundColor Yellow
+    Write-Host "  Worker health OK  store=$($hc.store)  dev_mode=$($hc.dev_mode)" -ForegroundColor Green
+}
+catch {
+    Write-Host "  [warn] Worker health check failed -- it may still be starting up" -ForegroundColor Yellow
 }
 
-# ── Print URLs ─────────────────────────────────────────────────────────────────
+# -- Print URLs ----------------------------------------------------------------
 Write-Host ""
-Write-Host "  ┌─────────────────────────────────────────────┐" -ForegroundColor Cyan
-Write-Host "  │  Sling Local Dev                            │" -ForegroundColor Cyan
-Write-Host "  │  Worker  → http://127.0.0.1:$WorkerPort         │" -ForegroundColor Cyan
-Write-Host "  │  API     → http://127.0.0.1:$ApiPort       (starting...) │" -ForegroundColor Cyan
-Write-Host "  │  API Docs→ http://127.0.0.1:$ApiPort/docs   │" -ForegroundColor Cyan
-Write-Host "  │  Stop: Ctrl+C (cleans up worker)           │" -ForegroundColor Cyan
-Write-Host "  └─────────────────────────────────────────────┘" -ForegroundColor Cyan
+Write-Host "  ============================================================" -ForegroundColor Cyan
+Write-Host "  Sling Local Dev" -ForegroundColor Cyan
+Write-Host "  Worker  : http://127.0.0.1:$WorkerPort/health" -ForegroundColor Cyan
+Write-Host "  API     : http://127.0.0.1:$ApiPort  (starting below...)" -ForegroundColor Cyan
+Write-Host "  API docs: http://127.0.0.1:$ApiPort/docs" -ForegroundColor Cyan
+Write-Host "  Stop    : Ctrl+C  (worker job cleaned up automatically)" -ForegroundColor Cyan
+Write-Host "  ============================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# ── Start API in foreground (blocks until Ctrl+C) ──────────────────────────────
+# -- Start API in foreground (blocks until Ctrl+C) -----------------------------
 try {
     uvicorn api.server:app --port $ApiPort --reload
-} finally {
+}
+finally {
     Write-Host ""
     Write-Host "  Stopping Worker job ..." -ForegroundColor Yellow
-    Stop-Job  $WorkerJob -ErrorAction SilentlyContinue
+    Stop-Job   $WorkerJob -ErrorAction SilentlyContinue
     Remove-Job $WorkerJob -ErrorAction SilentlyContinue
     Write-Host "  Done." -ForegroundColor Green
 }
