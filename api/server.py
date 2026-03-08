@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 try:
     from fastapi import FastAPI, File, HTTPException, UploadFile, WebSocket
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import StreamingResponse
+    from fastapi.responses import HTMLResponse, StreamingResponse
     from pydantic import BaseModel
     import httpx
     import uvicorn
@@ -305,3 +305,77 @@ async def calibrate_manual(req: ManualCalibRequest):
 
 if __name__ == "__main__":
     uvicorn.run("api.server:app", host="0.0.0.0", port=8000, reload=False, log_level="info")
+
+
+# ── Local Dev UI (DEV_MODE only) ────────────────────────────────────────────────
+# These endpoints are for local tactical visualization.
+# They are harmless in production (just 404 if demo_positions.json isn't present)
+# but are primarily used when DEV_MODE=1.
+
+try:
+    from api.ui_html import UI_HTML
+except ImportError:
+    try:
+        from ui_html import UI_HTML  # when run from api/ dir
+    except ImportError:
+        UI_HTML = "<h1>UI HTML not found. Make sure api/ui_html.py exists.</h1>"
+
+
+@app.get("/ui", response_class=HTMLResponse, include_in_schema=False)
+async def tactical_ui():
+    """Local tactical visualization viewer. Open in browser at http://127.0.0.1:8000/ui"""
+    return HTMLResponse(content=UI_HTML)
+
+
+@app.get("/api/demo-frames", include_in_schema=False)
+async def demo_frames():
+    """
+    Returns slimmed frame data from demo_positions.json for the tactical UI.
+    Strips heavy spectral/graph fields to keep the payload small (~30 KB).
+    """
+    # Look for demo_positions.json relative to repo root
+    candidates = [
+        Path(__file__).parent.parent / "demo_positions.json",  # repo root
+        Path("demo_positions.json"),                            # cwd fallback
+    ]
+    data_path = next((p for p in candidates if p.exists()), None)
+    if data_path is None:
+        raise HTTPException(
+            status_code=404,
+            detail="demo_positions.json not found. Run: python demo.py --mode positions --frames 150"
+        )
+
+    with open(data_path, "r", encoding="utf-8") as f:
+        raw_frames = json.load(f)
+
+    def slim_formation(fm):
+        if fm is None:
+            return None
+        return {
+            "positions":      fm.get("player_positions", []),
+            "formation":      fm.get("closest_known"),
+            "confidence":     fm.get("known_confidence", 0),
+            "pressing_height":fm.get("pressing_height"),
+            "defensive_line_x": fm.get("defensive_line_x"),
+            "is_settled":     fm.get("is_settled", False),
+            "lines":          fm.get("line_structure", []),
+        }
+
+    def slim_counter(c):
+        return {
+            "title":      c.get("title", ""),
+            "mechanism":  c.get("mechanism", ""),
+            "confidence": c.get("confidence", 0),
+        }
+
+    slimmed = [
+        {
+            "frame_id":      fr.get("frame_id", i),
+            "home":          slim_formation(fr.get("home_formation")),
+            "away":          slim_formation(fr.get("away_formation")),
+            "counters_home": [slim_counter(c) for c in fr.get("home_counters", [])],
+            "counters_away": [slim_counter(c) for c in fr.get("away_counters", [])],
+        }
+        for i, fr in enumerate(raw_frames)
+    ]
+    return slimmed
