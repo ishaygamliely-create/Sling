@@ -9,6 +9,7 @@ Auth:  all /jobs endpoints require  Authorization: Bearer <WORKER_AUTH_TOKEN>
 """
 
 from __future__ import annotations
+import asyncio
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
@@ -49,7 +50,7 @@ _WORKER_TOKEN = os.environ.get("WORKER_AUTH_TOKEN", "")
 
 def _require_auth(authorization: Optional[str] = Header(default=None)) -> None:
     if not _WORKER_TOKEN:
-        raise RuntimeError("WORKER_AUTH_TOKEN env var not set on worker")
+        raise HTTPException(status_code=500, detail="WORKER_AUTH_TOKEN not configured on worker")
     scheme, _, token = (authorization or "").partition(" ")
     if scheme.lower() != "bearer" or token != _WORKER_TOKEN:
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -123,7 +124,7 @@ async def create_job(req: JobRequest, background_tasks: BackgroundTasks):
         })
 
     # Dispatch to thread pool (non-blocking)
-    loop = __import__("asyncio").get_event_loop()
+    loop = asyncio.get_running_loop()
     loop.run_in_executor(_executor, run_job_sync, req.job_id, req.video_url)
 
     logger.info(f"Job {req.job_id} dispatched to executor")
